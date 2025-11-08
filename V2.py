@@ -6,8 +6,9 @@ import pygame
 
 Wall = "#"
 Floor = "."
-Start = "S"
+Start = "P"
 Goal = "G"
+Monster = "M"
 
 
 def manhattan(x, y):
@@ -228,6 +229,72 @@ def displayMapsSideBySide(initial, final, path=None, title="InitialMap vs FinalM
     pygame.quit()
 
 
+def distancetoPlayer(grid, start):
+    widht, height = len(grid), len(grid[0])
+    dist = []
+    for _ in range(widht):
+        row = []
+        for _ in range(height):
+            row.append(float("inf"))
+        dist.append(row)
+    queue = deque([start])
+    dist[start[0]][start[1]] = 0
+
+    while queue:
+        x, y = queue.popleft()
+        for addX, addY in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+            newX, newY = x + addX, y + addY
+            if 0 <= newX < widht and 0 <= newY < height and grid[newX][newY] != "#":
+                if dist[newX][newY] > dist[x][y] + 1:
+                    dist[newX][newY] = dist[x][y] + 1
+                    queue.append((newX, newY))
+    return dist
+
+
+def monsterMove(monsterPosition, distanceMap):
+    x, y = monsterPosition
+    currentBest = (x, y)
+    bestValue = distanceMap[x][y]
+
+    for addX, addY in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+        newX, newY = x + addX, y + addY
+        if distanceMap[newX][newY] < bestValue:
+            currentBest = (newX, newY)
+            bestValue = distanceMap[newX][newY]
+    return currentBest
+
+
+def monsterSpawn(grid):
+    width, height = len(grid), len(grid[0])
+    floorCells = [
+        (x, y) for x in range(height) for y in range(width) if grid[x][y] == Floor
+    ]
+    randomSpawn = random.sample(floorCells, 7)
+    for x, y in randomSpawn:
+        grid[x][y] = Monster
+    return randomSpawn
+
+
+def isMonsterTrap(grid, monsterPosition, move=3):
+    width, height = len(grid), len(grid[0])
+    x, y = monsterPosition
+    for _ in range(move):
+        moves = []
+        for addX, addY in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            newX = x + addX
+            newY = y + addY
+            if 0 <= newX < width and 0 <= newY < height:
+                if grid[newX][newY] != "#":
+                    moves.append((newX, newY))
+        if not moves:
+            return True
+        nx, ny = moves[0]
+        if nx == x and ny == y:
+            return True
+        x, y = nx, ny
+    return False
+
+
 def fitness(grid):
     regions = findRegion(grid)
     totalRegions = len(regions)
@@ -296,3 +363,93 @@ else:
 print("\nFinal Map:")
 printMap(mapInitialization)
 displayMapsSideBySide(initialMap, mapInitialization, path, "Initial vs Final Map")
+
+pygame.init()
+size = 6
+height, width = len(mapInitialization), len(mapInitialization[0])
+screen = pygame.display.set_mode((width * size, height * size))
+pygame.display.set_caption("chase chase and chase")
+clock = pygame.time.Clock()
+playerPos = (0, 0)
+monsterInitialPosition = monsterSpawn(mapInitialization)
+running = True
+caught = False
+won = False
+while running:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+        if event.type == pygame.KEYDOWN and not caught and not won:
+            x, y = 0, 0
+            if event.key == pygame.K_UP:
+                x = -1
+            elif event.key == pygame.K_DOWN:
+                x = 1
+            elif event.key == pygame.K_LEFT:
+                y = -1
+            elif event.key == pygame.K_RIGHT:
+                y = 1
+            newX, newY = playerPos[0] + x, playerPos[1] + y
+            if (
+                0 <= newX < height
+                and 0 <= newY < width
+                and mapInitialization[newX][newY] != Wall
+            ):
+                playerPos = (newX, newY)
+    if not caught and not won:
+        distanceMap = distancetoPlayer(mapInitialization, playerPos)
+
+        monsterPositionUpdate = []
+        for mPosition in monsterInitialPosition:
+            newPosition = monsterMove(mPosition, distanceMap)
+            if (
+                newPosition != mPosition
+                and mapInitialization[newPosition[0]][newPosition[1]] != Wall
+            ):
+                monsterPositionUpdate.append(newPosition)
+            else:
+                monsterPositionUpdate.append(mPosition)
+        monsterInitialPosition = monsterPositionUpdate
+
+        if playerPos == (height - 1, width - 1):
+            won = True
+        if any(m == playerPos for m in monsterInitialPosition):
+            caught = True
+    color = {
+        Wall: (30, 30, 30),
+        Floor: (220, 220, 220),
+        Start: (0, 255, 0),
+        Goal: (255, 0, 0),
+    }
+    screen.fill((0, 0, 0))
+    for x in range(height):
+        for y in range(width):
+            rect = pygame.Rect(y * size, x * size, size, size)
+            pygame.draw.rect(
+                screen, color.get(mapInitialization[x][y], (255, 255, 255)), rect
+            )
+    pygame.draw.circle(
+        screen,
+        (0, 0, 255),
+        (playerPos[1] * size + size // 2, playerPos[0] * size + size // 2),
+        size // 2,
+    )
+    for m in monsterInitialPosition:
+        pygame.draw.circle(
+            screen,
+            (255, 0, 0),
+            (m[1] * size + size // 2, m[0] * size + size // 2),
+            size // 2,
+        )
+    font = pygame.font.SysFont(None, 36)
+    if caught:
+        text = font.render("CAUGHT!", True, (255, 0, 0))
+    elif won:
+        text = font.render("YOU WIN!", True, (0, 255, 0))
+    else:
+        text = font.render("Run", True, (255, 255, 255))
+    screen.blit(text, (10, 10))
+
+    pygame.display.flip()
+    clock.tick(10)
+pygame.quit()
