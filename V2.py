@@ -251,25 +251,67 @@ def distancetoPlayer(grid, start):
     return dist
 
 
-def monsterMove(monsterPosition, distanceMap):
+def monsterMove(monsterPosition, distanceMap, randomness=0.2):
     x, y = monsterPosition
-    currentBest = (x, y)
-    bestValue = distanceMap[x][y]
+    height, width = len(distanceMap), len(distanceMap[0])
 
+    # Get all possible moves
+    moves = []
     for addX, addY in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
         newX, newY = x + addX, y + addY
-        if distanceMap[newX][newY] < bestValue:
-            currentBest = (newX, newY)
-            bestValue = distanceMap[newX][newY]
-    return currentBest
+        if 0 <= newX < height and 0 <= newY < width:
+            moves.append((newX, newY, distanceMap[newX][newY]))
+
+    # Random chance for suboptimal move
+    if random.random() < randomness and moves:
+        return random.choice([(m[0], m[1]) for m in moves])
+
+    # Otherwise, take best move
+    if moves:
+        best = min(moves, key=lambda m: m[2])
+        return (best[0], best[1])
+    return monsterPosition
+
+
+def monsterMoveSmart(grid, monsterPosition, distanceMap, vision=10, randomness=0.1):
+    x, y = monsterPosition
+    if distanceMap[x][y] > vision:
+        # Monster can't see player - patrol randomly
+        moves = [(x+dx, y+dy) for dx, dy in [(1,0),(-1,0),(0,1),(0,-1)]
+                 if 0 <= x+dx < len(grid) and 0 <= y+dy < len(grid[0]) and grid[x+dx][y+dy] != Wall]
+        return random.choice(moves) if moves else monsterPosition
+    else:
+        # Monster can see player - chase with some randomness
+        return monsterMove(monsterPosition, distanceMap, randomness)
+
+
+def monsterBehavior(grid, monsterPosition, distanceMap, role="hunter"):
+    if role == "hunter":
+        return monsterMoveSmart(grid, monsterPosition, distanceMap, vision=20, randomness=0.05)
+    elif role == "stalker":
+        if distanceMap[monsterPosition[0]][monsterPosition[1]] < 8:
+            return monsterMoveSmart(grid, monsterPosition, distanceMap, vision=18, randomness=0.2)
+        else:
+            # Move closer instead of waiting
+            return monsterMoveSmart(grid, monsterPosition, distanceMap, vision=18, randomness=0.3)
+    elif role == "wanderer":
+        return monsterMoveSmart(grid, monsterPosition, distanceMap, vision=6, randomness=0.8)
 
 
 def monsterSpawn(grid):
     width, height = len(grid), len(grid[0])
+    playerPos = (0, 0)
     floorCells = [
-        (x, y) for x in range(height) for y in range(width) if grid[x][y] == Floor
+        (x, y) for x in range(height) for y in range(width)
+        if grid[x][y] == Floor and manhattan((x, y), playerPos) >= 10
     ]
-    randomSpawn = random.sample(floorCells, 7)
+    if len(floorCells) < 7:
+        # If not enough safe cells, allow closer spawns but still avoid immediate vicinity
+        floorCells = [
+            (x, y) for x in range(height) for y in range(width)
+            if grid[x][y] == Floor and manhattan((x, y), playerPos) >= 5
+        ]
+    randomSpawn = random.sample(floorCells, min(7, len(floorCells)))
     for x, y in randomSpawn:
         grid[x][y] = Monster
     return randomSpawn
@@ -335,9 +377,9 @@ def fitness(grid):
     )
 
 
-initialMap = randomMap(100, 100)
-print("Initial Map:")
-printMap(initialMap)
+initialMap = randomMap(50, 50)
+# print("Initial Map:")
+# printMap(initialMap)
 mapInitialization = copyMap(initialMap)
 path = None
 iterations = 30
@@ -360,53 +402,144 @@ for i in range(iterations):
         print(f"No improvement at iteration {i + 1}")
 else:
     print(f"Failed to make the map solvable in {i} iteration")
-print("\nFinal Map:")
-printMap(mapInitialization)
-displayMapsSideBySide(initialMap, mapInitialization, path, "Initial vs Final Map")
+# print("\nFinal Map:")
+# printMap(mapInitialization)
+# displayMapsSideBySide(initialMap, mapInitialization, path, "Initial vs Final Map")
 
 pygame.init()
-size = 6
+size = 15
 height, width = len(mapInitialization), len(mapInitialization[0])
 screen = pygame.display.set_mode((width * size, height * size))
-pygame.display.set_caption("chase chase and chase")
+pygame.display.set_caption("Dungeon Map Game")
 clock = pygame.time.Clock()
-playerPos = (0, 0)
-monsterInitialPosition = monsterSpawn(mapInitialization)
+
+# Button properties
+button_width = 200
+button_height = 50
+button_color = (100, 100, 100)
+button_hover_color = (150, 150, 150)
+button_text_color = (255, 255, 255)
+font = pygame.font.SysFont(None, 36)
+
+def draw_button(screen, text, x, y, width, height, color, hover_color, mouse_pos):
+    rect = pygame.Rect(x, y, width, height)
+    if rect.collidepoint(mouse_pos):
+        pygame.draw.rect(screen, hover_color, rect)
+    else:
+        pygame.draw.rect(screen, color, rect)
+    pygame.draw.rect(screen, (255, 255, 255), rect, 2)  # border
+    text_surf = font.render(text, True, button_text_color)
+    text_rect = text_surf.get_rect(center=(x + width // 2, y + height // 2))
+    screen.blit(text_surf, text_rect)
+    return rect
+
+def reset_game():
+    global playerPos, monsterInitialPosition, monsterRoles, monsterCooldowns, caught, won
+    playerPos = (0, 0)
+    monsterInitialPosition = monsterSpawn(mapInitialization)
+    # Assign random roles to monsters
+    monsterRoles = [random.choice(["hunter", "stalker", "wanderer"]) for _ in monsterInitialPosition]
+    monsterCooldowns = [0] * len(monsterInitialPosition)
+    caught = False
+    won = False
+
+reset_game()
 running = True
-caught = False
-won = False
+main_menu = True
+game_started = False
+info_screen = False
+keys_pressed = set()
+mouse_pos = (0, 0)
+
 while running:
+    mouse_pos = pygame.mouse.get_pos()
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
-        if event.type == pygame.KEYDOWN and not caught and not won:
-            x, y = 0, 0
-            if event.key == pygame.K_UP:
-                x = -1
-            elif event.key == pygame.K_DOWN:
-                x = 1
-            elif event.key == pygame.K_LEFT:
-                y = -1
-            elif event.key == pygame.K_RIGHT:
-                y = 1
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:  # Left click
+                if main_menu:
+                    start_rect = draw_button(screen, "Start Game", (width * size - button_width) // 2, (height * size - button_height) // 2 - 100, button_width, button_height, button_color, button_hover_color, mouse_pos)
+                    quit_rect = draw_button(screen, "Quit", (width * size - button_width) // 2, (height * size - button_height) // 2 + 100, button_width, button_height, button_color, button_hover_color, mouse_pos)
+                    if start_rect.collidepoint(mouse_pos):
+                        main_menu = False
+                        info_screen = True
+                        info_from_menu = True
+                    elif quit_rect.collidepoint(mouse_pos):
+                        running = False
+                elif not game_started and not info_screen:
+                    button_rect = draw_button(screen, "Start Game", (width * size - button_width) // 2, (height * size - button_height) // 2, button_width, button_height, button_color, button_hover_color, mouse_pos)
+                    if button_rect.collidepoint(mouse_pos):
+                        info_screen = True
+                elif info_screen:
+                    # Info screen buttons
+                    continue_rect = draw_button(screen, "Continue", (width * size - button_width) // 2 - 120, height * size - 100, button_width, button_height, button_color, button_hover_color, mouse_pos)
+                    close_rect = draw_button(screen, "Close", (width * size - button_width) // 2 + 120, height * size - 100, button_width, button_height, button_color, button_hover_color, mouse_pos)
+                    if continue_rect.collidepoint(mouse_pos) or close_rect.collidepoint(mouse_pos):
+                        info_screen = False
+                        game_started = True
+                elif caught:
+                    button_rect = draw_button(screen, "Retry", (width * size - button_width) // 2, (height * size - button_height) // 2, button_width, button_height, button_color, button_hover_color, mouse_pos)
+                    if button_rect.collidepoint(mouse_pos):
+                        reset_game()
+                        game_started = True
+                elif won:
+                    button_rect = draw_button(screen, "Play Again", (width * size - button_width) // 2, (height * size - button_height) // 2, button_width, button_height, button_color, button_hover_color, mouse_pos)
+                    if button_rect.collidepoint(mouse_pos):
+                        reset_game()
+                        game_started = True
+        elif event.type == pygame.KEYDOWN:
+            keys_pressed.add(event.key)
+            if not game_started and event.key == pygame.K_SPACE:
+                game_started = True
+            elif caught and event.key == pygame.K_r:
+                reset_game()
+                game_started = True
+        elif event.type == pygame.KEYUP:
+            keys_pressed.discard(event.key)
+
+    if game_started and not caught and not won:
+        x, y = 0, 0
+        if pygame.K_w in keys_pressed:
+            x = -1
+        elif pygame.K_s in keys_pressed:
+            x = 1
+        if pygame.K_a in keys_pressed:
+            y = -1
+        elif pygame.K_d in keys_pressed:
+            y = 1
+        if x != 0 or y != 0:
             newX, newY = playerPos[0] + x, playerPos[1] + y
-            if (
+            can_move = (
                 0 <= newX < height
                 and 0 <= newY < width
                 and mapInitialization[newX][newY] != Wall
-            ):
+            )
+            # Prevent diagonal movement through walls
+            if x != 0 and y != 0:
+                can_move = can_move and (
+                    mapInitialization[playerPos[0] + x][playerPos[1]] != Wall and
+                    mapInitialization[playerPos[0]][playerPos[1] + y] != Wall
+                )
+            if can_move:
                 playerPos = (newX, newY)
-    if not caught and not won:
+
         distanceMap = distancetoPlayer(mapInitialization, playerPos)
 
         monsterPositionUpdate = []
-        for mPosition in monsterInitialPosition:
-            newPosition = monsterMove(mPosition, distanceMap)
+        for i, mPosition in enumerate(monsterInitialPosition):
+            if monsterCooldowns[i] > 0:
+                monsterCooldowns[i] -= 1
+                monsterPositionUpdate.append(mPosition)
+                continue
+            role = monsterRoles[i]
+            newPosition = monsterBehavior(mapInitialization, mPosition, distanceMap, role)
             if (
                 newPosition != mPosition
                 and mapInitialization[newPosition[0]][newPosition[1]] != Wall
             ):
                 monsterPositionUpdate.append(newPosition)
+                monsterCooldowns[i] = random.randint(2, 4)  # Cooldown after moving
             else:
                 monsterPositionUpdate.append(mPosition)
         monsterInitialPosition = monsterPositionUpdate
@@ -415,6 +548,7 @@ while running:
             won = True
         if any(m == playerPos for m in monsterInitialPosition):
             caught = True
+
     color = {
         Wall: (30, 30, 30),
         Floor: (220, 220, 220),
@@ -428,27 +562,68 @@ while running:
             pygame.draw.rect(
                 screen, color.get(mapInitialization[x][y], (255, 255, 255)), rect
             )
-    pygame.draw.circle(
-        screen,
-        (0, 0, 255),
-        (playerPos[1] * size + size // 2, playerPos[0] * size + size // 2),
-        size // 2,
-    )
-    for m in monsterInitialPosition:
+            # Add grid lines
+            pygame.draw.rect(screen, (0, 0, 0), rect, 1)
+    if game_started:
         pygame.draw.circle(
             screen,
-            (255, 0, 0),
-            (m[1] * size + size // 2, m[0] * size + size // 2),
+            (0, 0, 255),
+            (playerPos[1] * size + size // 2, playerPos[0] * size + size // 2),
             size // 2,
         )
+        monster_colors = {
+            "hunter": (255, 0, 0),      # Red
+            "stalker": (255, 165, 0),   # Orange
+            "wanderer": (128, 0, 128),  # Purple
+        }
+        for i, m in enumerate(monsterInitialPosition):
+            role = monsterRoles[i]
+            pygame.draw.circle(
+                screen,
+                monster_colors.get(role, (255, 0, 0)),
+                (m[1] * size + size // 2, m[0] * size + size // 2),
+                size // 2,
+            )
     font = pygame.font.SysFont(None, 36)
-    if caught:
-        text = font.render("CAUGHT!", True, (255, 0, 0))
+    if main_menu:
+        # Draw main menu
+        title_font = pygame.font.SysFont(None, 72)
+        title_text = title_font.render("Dungeon Map Game", True, (255, 255, 255))
+        screen.blit(title_text, ((width * size - title_text.get_width()) // 2, 100))
+        draw_button(screen, "Start Game", (width * size - button_width) // 2, (height * size - button_height) // 2 - 100, button_width, button_height, button_color, button_hover_color, mouse_pos)
+        draw_button(screen, "Quit", (width * size - button_width) // 2, (height * size - button_height) // 2 + 100, button_width, button_height, button_color, button_hover_color, mouse_pos)
+    elif not game_started and not info_screen:
+        draw_button(screen, "Start Game", (width * size - button_width) // 2, (height * size - button_height) // 2, button_width, button_height, button_color, button_hover_color, mouse_pos)
+    elif info_screen:
+        # Draw info screen background
+        pygame.draw.rect(screen, (0, 0, 0), (0, 0, width * size, height * size))
+        # Draw info text
+        info_lines = [
+            "Dungeon Map Game",
+            "",
+            "Controls:",
+            "WASD - Move",
+            "",
+            "Monster Types:",
+            "Red (Hunter): Aggressive, chases player",
+            "Orange (Stalker): Waits, then chases",
+            "Purple (Wanderer): Random movement",
+            "",
+            "Goal: Reach the red goal without getting caught!"
+        ]
+        for i, line in enumerate(info_lines):
+            text = font.render(line, True, (255, 255, 255))
+            screen.blit(text, (50, 50 + i * 40))
+        # Draw buttons
+        draw_button(screen, "Continue", (width * size - button_width) // 2 - 120, height * size - 100, button_width, button_height, button_color, button_hover_color, mouse_pos)
+        draw_button(screen, "Close", (width * size - button_width) // 2 + 120, height * size - 100, button_width, button_height, button_color, button_hover_color, mouse_pos)
+    elif caught:
+        draw_button(screen, "Retry", (width * size - button_width) // 2, (height * size - button_height) // 2, button_width, button_height, button_color, button_hover_color, mouse_pos)
     elif won:
-        text = font.render("YOU WIN!", True, (0, 255, 0))
+        draw_button(screen, "Play Again", (width * size - button_width) // 2, (height * size - button_height) // 2, button_width, button_height, button_color, button_hover_color, mouse_pos)
     else:
         text = font.render("Run", True, (255, 255, 255))
-    screen.blit(text, (10, 10))
+        screen.blit(text, (10, 10))
 
     pygame.display.flip()
     clock.tick(10)
