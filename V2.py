@@ -433,8 +433,9 @@ def draw_button(screen, text, x, y, width, height, color, hover_color, mouse_pos
     screen.blit(text_surf, text_rect)
     return rect
 
+global hint_path, show_hint
 def reset_game():
-    global playerPos, monsterInitialPosition, monsterRoles, monsterCooldowns, caught, won
+    global playerPos, monsterInitialPosition, monsterRoles, monsterCooldowns, caught, won, hint_path, show_hint
     playerPos = (0, 0)
     monsterInitialPosition = monsterSpawn(mapInitialization)
     # Assign random roles to monsters
@@ -442,6 +443,16 @@ def reset_game():
     monsterCooldowns = [0] * len(monsterInitialPosition)
     caught = False
     won = False
+    hint_path = None
+    show_hint = False
+
+def hint():
+    global hint_path, show_hint
+    hint_path = solve(mapInitialization)
+    if hint_path:
+        show_hint = True
+    else:
+        show_hint = False
 
 reset_game()
 running = True
@@ -480,9 +491,15 @@ while running:
                         game_started = True
                 elif caught:
                     button_rect = draw_button(screen, "Retry", (width * size - button_width) // 2, (height * size - button_height) // 2, button_width, button_height, button_color, button_hover_color, mouse_pos)
+                    hint_rect = draw_button(screen, "Hint", (width * size - button_width) // 2, (height * size - button_height) // 2 + 100, button_width, button_height, button_color, button_hover_color, pygame.mouse.get_pos())
                     if button_rect.collidepoint(mouse_pos):
                         reset_game()
                         game_started = True
+                    if hint_rect.collidepoint(mouse_pos):
+                        hint()  
+                        show_hint = True
+                        game_started = True
+
                 elif won:
                     button_rect = draw_button(screen, "Play Again", (width * size - button_width) // 2, (height * size - button_height) // 2, button_width, button_height, button_color, button_hover_color, mouse_pos)
                     if button_rect.collidepoint(mouse_pos):
@@ -564,6 +581,12 @@ while running:
             )
             # Add grid lines
             pygame.draw.rect(screen, (0, 0, 0), rect, 1)
+    # --- Draw hint path if enabled ---
+        if show_hint and hint_path:
+            for (hx, hy) in hint_path:
+                rect = pygame.Rect(hy * size, hx * size, size, size)
+                pygame.draw.rect(screen, (255, 255, 0), rect)  # yellow highlight
+
     if game_started:
         pygame.draw.circle(
             screen,
@@ -589,7 +612,26 @@ while running:
         # Draw main menu
         title_font = pygame.font.SysFont(None, 72)
         title_text = title_font.render("Dungeon Map Game", True, (255, 255, 255))
-        screen.blit(title_text, ((width * size - title_text.get_width()) // 2, 100))
+
+        # Get the position for centering
+        title_x = (width * size - title_text.get_width()) // 2
+        title_y = 100
+
+        # Create a background box (padding around the text)
+        padding = 20
+        bg_rect = pygame.Rect(
+            title_x - padding // 2,
+            title_y - padding // 2,
+            title_text.get_width() + padding,
+            title_text.get_height() + padding
+        )
+
+        # Draw the background box (optional: rounded corners or transparency)
+        pygame.draw.rect(screen, (50, 50, 50), bg_rect, border_radius=10)  # dark gray box
+        pygame.draw.rect(screen, (255, 255, 255), bg_rect, 2, border_radius=10)  # white outline
+
+        # Finally, draw the title text on top
+        screen.blit(title_text, (title_x, title_y))
         draw_button(screen, "Start Game", (width * size - button_width) // 2, (height * size - button_height) // 2 - 100, button_width, button_height, button_color, button_hover_color, mouse_pos)
         draw_button(screen, "Quit", (width * size - button_width) // 2, (height * size - button_height) // 2 + 100, button_width, button_height, button_color, button_hover_color, mouse_pos)
     elif not game_started and not info_screen:
@@ -619,6 +661,7 @@ while running:
         draw_button(screen, "Close", (width * size - button_width) // 2 + 120, height * size - 100, button_width, button_height, button_color, button_hover_color, mouse_pos)
     elif caught:
         draw_button(screen, "Retry", (width * size - button_width) // 2, (height * size - button_height) // 2, button_width, button_height, button_color, button_hover_color, mouse_pos)
+        hint_rect = draw_button(screen, "Hint", (width * size - button_width) // 2, (height * size - button_height) // 2 + 100, button_width, button_height, button_color, button_hover_color, mouse_pos)
     elif won:
         draw_button(screen, "Play Again", (width * size - button_width) // 2, (height * size - button_height) // 2, button_width, button_height, button_color, button_hover_color, mouse_pos)
     else:
