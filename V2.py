@@ -459,7 +459,7 @@ else:
 
 mapChanges(evolutionStage, size=8, delay=1000)
 pygame.init()
-size = 15
+size = 8
 height, width = len(mapInitialization), len(mapInitialization[0])
 screen = pygame.display.set_mode((width * size, height * size))
 pygame.display.set_caption("Dungeon Map Game")
@@ -540,7 +540,7 @@ while running:
                         screen,
                         "Start Game",
                         (width * size - button_width) // 2,
-                        (height * size - button_height) // 2 - 100,
+                        (height * size - button_height) // 2 - 150,
                         button_width,
                         button_height,
                         button_color,
@@ -551,7 +551,7 @@ while running:
                         screen,
                         "Quit",
                         (width * size - button_width) // 2,
-                        (height * size - button_height) // 2 + 100,
+                        (height * size - button_height) // 2 + 50,
                         button_width,
                         button_height,
                         button_color,
@@ -654,8 +654,18 @@ while running:
                         game_started = True
         elif event.type == pygame.KEYDOWN:
             keys_pressed.add(event.key)
-            if not game_started and event.key == pygame.K_SPACE:
+            if event.key == pygame.K_RETURN:
+                if info_screen:
+                    info_screen = False
+                    game_started = True
+                elif main_menu:
+                    main_menu = False
+                    info_screen = True
+                    info_from_menu = True
+
+            elif not game_started and event.key == pygame.K_SPACE:
                 game_started = True
+
             elif caught and event.key == pygame.K_r:
                 reset_game()
                 game_started = True
@@ -775,7 +785,7 @@ while running:
             screen,
             "Start Game",
             (width * size - button_width) // 2,
-            (height * size - button_height) // 2 - 100,
+            (height * size - button_height) // 2 - 150,
             button_width,
             button_height,
             button_color,
@@ -786,7 +796,7 @@ while running:
             screen,
             "Quit",
             (width * size - button_width) // 2,
-            (height * size - button_height) // 2 + 100,
+            (height * size - button_height) // 2 + 50,
             button_width,
             button_height,
             button_color,
@@ -826,7 +836,7 @@ while running:
         draw_button(
             screen,
             "Continue",
-            (width * size - button_width) // 2 - 120,
+            (width * size - button_width) // 2 - 220,
             height * size - 100,
             button_width,
             button_height,
@@ -837,7 +847,7 @@ while running:
         draw_button(
             screen,
             "Close",
-            (width * size - button_width) // 2 + 120,
+            (width * size - button_width) // 2 + 220,
             height * size - 100,
             button_width,
             button_height,
