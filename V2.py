@@ -1,5 +1,7 @@
 import heapq
 import random
+import time
+import math
 from collections import deque
 
 import pygame
@@ -10,12 +12,10 @@ Start = "P"
 Goal = "G"
 Monster = "M"
 
-
 def manhattan(x, y):
     x1, x2 = x
     y1, y2 = y
     return abs(x1 - y1) + abs(x2 - y2)
-
 
 def randomMap(width, height, bias=0.5):
     grid = []
@@ -31,17 +31,28 @@ def randomMap(width, height, bias=0.5):
     grid[height - 1][width - 1] = Goal
     return grid
 
+def copyMap(grid):
+    newMap = []
+    for x in range(len(grid)):
+        row = []
+        for y in range(len(grid[0])):
+            row.append(grid[x][y])
+        newMap.append(row)
+    return newMap
 
-def printMap(grid):
-    for row in grid:
-        print("".join(row))
-    print()
-
+def booleanMap(height, width):
+    boolMap = []
+    for x in range(width):
+        row = []
+        for y in range(height):
+            row.append(False)
+        boolMap.append(row)
+    return boolMap
 
 def solve(grid):
     start = (0, 0)
-    widht, height = len(grid), len(grid[0])
-    goal = (widht - 1, height - 1)
+    width, height = len(grid), len(grid[0])
+    goal = (width - 1, height - 1)
     walk = []
     heapq.heappush(walk, (manhattan(start, goal), start))
     backtracking = {}
@@ -57,12 +68,14 @@ def solve(grid):
                 path.append(current)
             path.reverse()
             return path
+        
         for addX, addY in [(1, 0), (0, 1), (-1, 0), (0, -1)]:
             newX, newY = x + addX, y + addY
-            if newX < 0 or newY < 0 or newX >= len(grid) or newY >= len(grid[0]):
+            if newX < 0 or newY < 0 or newX >= width or newY >= height:
                 continue
             if grid[newX][newY] == Wall:
                 continue
+            
             nextNode = (newX, newY)
             newG = gScore[current] + 1
             if nextNode not in gScore or newG < gScore[nextNode]:
@@ -72,16 +85,192 @@ def solve(grid):
                 heapq.heappush(walk, (fScore, nextNode))
     return None
 
+def changeMap(grid):
+    newGrid = copyMap(grid)
+    regions = findRegion(newGrid)
+    if len(regions) > 1:
+        largest = max(regions, key=lambda r: len(r["Floors"]))
+        for region in regions:
+            if region is not largest:
+                links = []
+                for w in region["Walls"]:
+                    connected = False
+                    for f in largest["Floors"]:
+                        if manhattan(w, f) == 1:
+                            connected = True
+                            break
+                    if connected:
+                        links.append(w)
+                if links:
+                    x, y = random.choice(links)
+                    newGrid[x][y] = Floor
+    else:
+        changeMap_Random(newGrid) 
+    return newGrid
 
-def booleanMap(height, width):
-    boolMap = []
-    for x in range(width):
-        row = []
-        for y in range(height):
-            row.append(False)
-        boolMap.append(row)
-    return boolMap
+def changeMap_Random(grid):
+    newGrid = copyMap(grid)
+    height, width = len(newGrid), len(newGrid[0])
+    
+    rx = random.randint(2, height - 3)
+    ry = random.randint(2, width - 3)
+    
+    direction = random.choice([0, 1])
+    length = random.randint(2, 5) 
+    
+    build_mode = Floor if random.random() < 0.8 else Wall
 
+    for i in range(length):
+        if direction == 0: 
+            nx, ny = rx, ry + i
+        else: 
+            nx, ny = rx + i, ry
+            
+        if 0 < nx < height-1 and 0 < ny < width-1:
+            if newGrid[nx][ny] != Start and newGrid[nx][ny] != Goal:
+                newGrid[nx][ny] = build_mode
+            
+    return newGrid
+
+def compare_HC_vs_SA(grid):
+    h_grid, w_grid = len(grid), len(grid[0])
+    base_map = randomMap(w_grid, h_grid) 
+    
+    mapHC = copyMap(base_map)
+    fitHC = fitness(mapHC)
+    prev_mapHC = copyMap(base_map)
+    
+    mapSA = copyMap(base_map)
+    fitSA = fitness(mapSA)
+    prev_mapSA = copyMap(base_map)
+    
+    iter_solved_HC = None
+    iter_solved_SA = None
+    
+    temperature = 5000 
+    cooling_rate = 0.99 
+
+    px = 6 
+    screen_w = (w_grid * px * 2 + 20)
+    screen_h = (h_grid * px + 100)
+    
+    gen_screen = pygame.display.set_mode((screen_w, screen_h))
+    pygame.display.set_caption("Hill Climbing vs Simulated Annealing")
+    font = pygame.font.SysFont("monospace", 16)
+    
+    iterations = 10000
+    
+    running_race = True
+    i = 0
+    
+    while running_race and i < iterations:
+        prev_mapHC = copyMap(mapHC)
+        prev_mapSA = copyMap(mapSA)
+
+        candidatesHC = [changeMap_Random(mapHC) for _ in range(3)]
+        scoresHC = [fitness(c) for c in candidatesHC]
+        best_idx = scoresHC.index(max(scoresHC))
+        
+        if scoresHC[best_idx] > fitHC:
+            mapHC = candidatesHC[best_idx]
+            fitHC = scoresHC[best_idx]
+            
+        if iter_solved_HC is None and fitHC > 0:
+            iter_solved_HC = i + 1
+            
+        candidatesSA = [changeMap_Random(mapSA) for _ in range(3)]
+        scoresSA = [fitness(c) for c in candidatesSA]
+        best_idx_SA = scoresSA.index(max(scoresSA))
+        new_map_SA = candidatesSA[best_idx_SA]
+        new_fit_SA = scoresSA[best_idx_SA]
+        
+        if new_fit_SA > fitSA:
+            mapSA = new_map_SA
+            fitSA = new_fit_SA
+        else:
+            delta = new_fit_SA - fitSA
+            try:
+                probability = math.exp(delta / temperature)
+            except OverflowError:
+                probability = 0
+
+            if random.random() < probability:
+                mapSA = new_map_SA
+                fitSA = new_fit_SA
+        
+        if iter_solved_SA is None and fitSA > 0:
+            iter_solved_SA = i + 1
+        
+        temperature *= cooling_rate
+        if temperature < 1: temperature = 1
+        
+        gen_screen.fill((0,0,0))
+        
+        t1 = font.render(f"Hill Climbing: {fitHC:.2f}", True, (0, 255, 0))
+        t2 = font.render(f"Sim. Annealing: {fitSA:.2f}", True, (100, 100, 255))
+        
+        str_hc_sol = f"Solved at: {iter_solved_HC}" if iter_solved_HC else "Solved at: -"
+        color_hc_sol = (255, 255, 0) if iter_solved_HC else (150, 150, 150)
+        t_sol_hc = font.render(str_hc_sol, True, color_hc_sol)
+        
+        str_sa_sol = f"Solved at: {iter_solved_SA}" if iter_solved_SA else "Solved at: -"
+        color_sa_sol = (255, 255, 0) if iter_solved_SA else (150, 150, 150)
+        t_sol_sa = font.render(str_sa_sol, True, color_sa_sol)
+        
+        t_iter = font.render(f"Iter: {i+1}/{iterations}", True, (255, 255, 255))
+        t_temp = font.render(f"Temp: {temperature:.1f}", True, (255, 255, 0))
+        t_hint = font.render("ESC to exit", True, (255, 255, 255))
+        
+        gen_screen.blit(t1, (10, 10))
+        gen_screen.blit(t_sol_hc, (10, 30))
+        gen_screen.blit(t_iter, (10, 50))
+        
+        sa_x_pos = w_grid * px + 30
+        gen_screen.blit(t2, (sa_x_pos, 10))
+        gen_screen.blit(t_sol_sa, (sa_x_pos, 30))
+        gen_screen.blit(t_temp, (sa_x_pos, 50))
+        
+        gen_screen.blit(t_hint, (screen_w - 120, screen_h - 30))
+        
+        off_y = 80
+        C_HIGHLIGHT = (255, 0, 255)
+        color = {Wall: (30,30,30), Floor: (255,255,255), Start:(0,255,0), Goal:(255,0,0)}
+        
+        for r in range(h_grid):
+            for c in range(w_grid):
+                rectHC = pygame.Rect(c*px, off_y + r*px, px, px)
+                if mapHC[r][c] != prev_mapHC[r][c]:
+                    pygame.draw.rect(gen_screen, C_HIGHLIGHT, rectHC)
+                else:
+                    pygame.draw.rect(gen_screen, color.get(mapHC[r][c], (0,0,0)), rectHC)
+                
+                rectSA = pygame.Rect((w_grid*px + 20) + c*px, off_y + r*px, px, px)
+                if mapSA[r][c] != prev_mapSA[r][c]:
+                    pygame.draw.rect(gen_screen, C_HIGHLIGHT, rectSA)
+                else:
+                    pygame.draw.rect(gen_screen, color.get(mapSA[r][c], (0,0,0)), rectSA)
+                
+        pygame.display.flip()
+        i += 1
+        
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
+                running_race = False
+        
+        if iter_solved_HC is not None and iter_solved_SA is not None:
+            time.sleep(1)
+            break
+        
+        time.sleep(0.01)
+        
+    while running_race:
+         for event in pygame.event.get():
+            if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
+                running_race = False
+                
+    global size
+    pygame.display.set_mode((w_grid * size, h_grid * size))
+    pygame.display.set_caption("Dungeon Map Game")
 
 def connected(grid, start, visited):
     width, height = len(grid), len(grid[0])
@@ -103,7 +292,6 @@ def connected(grid, start, visited):
                 connectedWalls.append((newX, newY))
     return connectedFloors, connectedWalls
 
-
 def findRegion(grid):
     height, width = len(grid), len(grid[0])
     visited = booleanMap(height, width)
@@ -114,17 +302,6 @@ def findRegion(grid):
                 floors, walls = connected(grid, (x, y), visited)
                 regions.append({"Floors": floors, "Walls": walls})
     return regions
-
-
-def copyMap(grid):
-    newMap = []
-    for x in range(len(grid)):
-        row = []
-        for y in range(len(grid[0])):
-            row.append(grid[x][y])
-        newMap.append(row)
-    return newMap
-
 
 def impasse(grid):
     widht, height = len(grid), len(grid[0])
@@ -152,242 +329,6 @@ def impasse(grid):
     else:
         averageBranch = 0
     return impasse, averageBranch
-
-
-def changeMap(grid):
-    newGrid = copyMap(grid)
-    regions = findRegion(newGrid)
-    if len(regions) > 1:
-        largest = max(regions, key=lambda r: len(r["Floors"]))
-        for region in regions:
-            if region is not largest:
-                links = []
-                for w in region["Walls"]:
-                    connected = False
-                    for f in largest["Floors"]:
-                        if manhattan(w, f) == 1:
-                            connected = True
-                            break
-                    if connected:
-                        links.append(w)
-                if links:
-                    x, y = random.choice(links)
-                    newGrid[x][y] = Floor
-    else:
-        height, width = len(newGrid), len(newGrid[0])
-        candidates = []
-        for x in range(height):
-            for y in range(width):
-                if newGrid[x][y] == Wall:
-                    for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
-                        newX, newY = x + dx, y + dy
-                        if newX < 0 or newY < 0 or newX >= width or newY >= height:
-                            continue
-                        if newGrid[newX][newY] == Floor:
-                            candidates.append((x, y))
-                            break
-        if candidates:
-            for x, y in random.sample(candidates, min(3, len(candidates))):
-                newGrid[x][y] = Floor
-    return newGrid
-
-
-def displayMapsSideBySide(initial, final, path=None, title="InitialMap vs FinalMap"):
-    pygame.init()
-    size = 6
-    height = len(initial)
-    width = len(initial[0])
-    gap = 5
-    screen = pygame.display.set_mode(((width * 2 + gap) * size, height * size))
-    pygame.display.set_caption(title)
-    color = {
-        Wall: (30, 30, 30),
-        Floor: (220, 220, 220),
-        Start: (0, 255, 0),
-        Goal: (255, 0, 0),
-    }
-
-    def drawMap(grid, XOffset):
-        for y in range(height):
-            for x in range(width):
-                rect = pygame.Rect((x + XOffset) * size, y * size, size, size)
-                pygame.draw.rect(screen, color.get(grid[y][x], (255, 255, 255)), rect)
-
-    screen.fill((0, 0, 0))
-    drawMap(initial, 0)
-    drawMap(final, width + gap)
-    if path:
-        for x, y in path:
-            rect = pygame.Rect((y + width + gap) * size, x * size, size, size)
-            pygame.draw.rect(screen, (255, 255, 0), rect)
-    pygame.display.flip()
-    waiting = True
-    while waiting:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                waiting = False
-    pygame.quit()
-
-
-def distancetoPlayer(grid, start):
-    widht, height = len(grid), len(grid[0])
-    dist = []
-    for _ in range(widht):
-        row = []
-        for _ in range(height):
-            row.append(float("inf"))
-        dist.append(row)
-    queue = deque([start])
-    dist[start[0]][start[1]] = 0
-
-    while queue:
-        x, y = queue.popleft()
-        for addX, addY in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
-            newX, newY = x + addX, y + addY
-            if 0 <= newX < widht and 0 <= newY < height and grid[newX][newY] != "#":
-                if dist[newX][newY] > dist[x][y] + 1:
-                    dist[newX][newY] = dist[x][y] + 1
-                    queue.append((newX, newY))
-    return dist
-
-
-def monsterMove(monsterPosition, distanceMap, randomness=0.2):
-    x, y = monsterPosition
-    height, width = len(distanceMap), len(distanceMap[0])
-
-    moves = []
-    for addX, addY in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
-        newX, newY = x + addX, y + addY
-        if 0 <= newX < height and 0 <= newY < width:
-            moves.append((newX, newY, distanceMap[newX][newY]))
-    if random.random() < randomness and moves:
-        return random.choice([(m[0], m[1]) for m in moves])
-    if moves:
-        best = min(moves, key=lambda m: m[2])
-        return (best[0], best[1])
-    return monsterPosition
-
-
-def monsterMoveSmart(grid, monsterPosition, distanceMap, vision=10, randomness=0.1):
-    x, y = monsterPosition
-    if distanceMap[x][y] > vision:
-        moves = [
-            (x + dx, y + dy)
-            for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1)]
-            if 0 <= x + dx < len(grid)
-            and 0 <= y + dy < len(grid[0])
-            and grid[x + dx][y + dy] != Wall
-        ]
-        return random.choice(moves) if moves else monsterPosition
-    else:
-        return monsterMove(monsterPosition, distanceMap, randomness)
-
-
-def monsterBehavior(grid, monsterPosition, distanceMap, role="hunter"):
-    if role == "hunter":
-        return monsterMoveSmart(
-            grid, monsterPosition, distanceMap, vision=20, randomness=0.05
-        )
-    elif role == "stalker":
-        if distanceMap[monsterPosition[0]][monsterPosition[1]] < 8:
-            return monsterMoveSmart(
-                grid, monsterPosition, distanceMap, vision=18, randomness=0.2
-            )
-        else:
-            return monsterMoveSmart(
-                grid, monsterPosition, distanceMap, vision=18, randomness=0.3
-            )
-    elif role == "wanderer":
-        return monsterMoveSmart(
-            grid, monsterPosition, distanceMap, vision=6, randomness=0.8
-        )
-
-
-def monsterSpawn(grid):
-    width, height = len(grid), len(grid[0])
-    playerPos = (0, 0)
-    floorCells = [
-        (x, y)
-        for x in range(height)
-        for y in range(width)
-        if grid[x][y] == Floor and manhattan((x, y), playerPos) >= 10
-    ]
-    if len(floorCells) < 7:
-        floorCells = [
-            (x, y)
-            for x in range(height)
-            for y in range(width)
-            if grid[x][y] == Floor and manhattan((x, y), playerPos) >= 5
-        ]
-    randomSpawn = random.sample(floorCells, min(7, len(floorCells)))
-    for x, y in randomSpawn:
-        grid[x][y] = Monster
-    return randomSpawn
-
-
-def isMonsterTrap(grid, monsterPosition, move=3):
-    width, height = len(grid), len(grid[0])
-    x, y = monsterPosition
-    for _ in range(move):
-        moves = []
-        for addX, addY in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-            newX = x + addX
-            newY = y + addY
-            if 0 <= newX < width and 0 <= newY < height:
-                if grid[newX][newY] != "#":
-                    moves.append((newX, newY))
-        if not moves:
-            return True
-        nx, ny = moves[0]
-        if nx == x and ny == y:
-            return True
-        x, y = nx, ny
-    return False
-
-
-def mapChanges(frames, size, delay):
-    pygame.init()
-    height = len(frames[0])
-    width = len(frames[0][0])
-    screen = pygame.display.set_mode((width * size, height * size))
-    pygame.display.set_caption("Map Evolution")
-
-    color = {
-        Wall: (30, 30, 30),
-        Floor: (220, 220, 220),
-        Start: (0, 255, 0),
-        Goal: (255, 0, 0),
-    }
-    font = pygame.font.SysFont(None, 32)
-
-    for i, grid in enumerate(frames):
-        screen.fill((0, 0, 0))
-        for x in range(height):
-            for y in range(width):
-                rect = pygame.Rect(y * size, x * size, size, size)
-                pygame.draw.rect(screen, color.get(grid[x][y], (255, 255, 255)), rect)
-
-        text = font.render(f"Iteration {i + 1}/{len(frames)}", True, (255, 255, 0))
-        screen.blit(text, (10, 10))
-
-        pygame.display.flip()
-        pygame.time.wait(delay)
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                return
-    pygame.time.wait(800)
-
-
-def showMapDiff(mapInitialization, finalMap):
-    width, height = len(mapInitialization), len(mapInitialization[0])
-    diffCoordinates = []
-    for x in range(width):
-        for y in range(height):
-            if mapInitialization[x][y] != finalMap[x][y]:
-                diffCoordinates.append((x, y))
-    return diffCoordinates
-
 
 def fitness(grid):
     regions = findRegion(grid)
@@ -428,8 +369,116 @@ def fitness(grid):
         + branchingScore
     )
 
+def mapChanges(frames, size, delay):
+    pygame.init()
+    height = len(frames[0])
+    width = len(frames[0][0])
+    screen = pygame.display.set_mode((width * size, height * size))
+    pygame.display.set_caption("Map Evolution")
+    
+    color = {Wall: (30, 30, 30), Floor: (220, 220, 220), Start: (0, 255, 0), Goal: (255, 0, 0)}
+    font = pygame.font.SysFont(None, 32)
 
-initialMap = randomMap(100, 100)
+    for i, grid in enumerate(frames):
+        screen.fill((0, 0, 0))
+        for x in range(height):
+            for y in range(width):
+                rect = pygame.Rect(y * size, x * size, size, size)
+                pygame.draw.rect(screen, color.get(grid[x][y], (255, 255, 255)), rect)
+
+        text = font.render(f"Iteration {i + 1}/{len(frames)}", True, (255, 255, 0))
+        screen.blit(text, (10, 10))
+        pygame.display.flip()
+        pygame.time.wait(delay)
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                return
+    pygame.time.wait(800)
+
+def distancetoPlayer(grid, start):
+    widht, height = len(grid), len(grid[0])
+    dist = []
+    for _ in range(widht):
+        row = []
+        for _ in range(height):
+            row.append(float("inf"))
+        dist.append(row)
+    queue = deque([start])
+    dist[start[0]][start[1]] = 0
+
+    while queue:
+        x, y = queue.popleft()
+        for addX, addY in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+            newX, newY = x + addX, y + addY
+            if 0 <= newX < widht and 0 <= newY < height and grid[newX][newY] != "#":
+                if dist[newX][newY] > dist[x][y] + 1:
+                    dist[newX][newY] = dist[x][y] + 1
+                    queue.append((newX, newY))
+    return dist
+
+def monsterMove(monsterPosition, distanceMap, randomness=0.2):
+    x, y = monsterPosition
+    height, width = len(distanceMap), len(distanceMap[0])
+    moves = []
+    for addX, addY in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+        newX, newY = x + addX, y + addY
+        if 0 <= newX < height and 0 <= newY < width:
+            moves.append((newX, newY, distanceMap[newX][newY]))
+    if random.random() < randomness and moves:
+        return random.choice([(m[0], m[1]) for m in moves])
+    if moves:
+        best = min(moves, key=lambda m: m[2])
+        return (best[0], best[1])
+    return monsterPosition
+
+def monsterMoveSmart(grid, monsterPosition, distanceMap, vision=10, randomness=0.1):
+    x, y = monsterPosition
+    if distanceMap[x][y] > vision:
+        moves = [
+            (x + dx, y + dy)
+            for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1)]
+            if 0 <= x + dx < len(grid)
+            and 0 <= y + dy < len(grid[0])
+            and grid[x + dx][y + dy] != Wall
+        ]
+        return random.choice(moves) if moves else monsterPosition
+    else:
+        return monsterMove(monsterPosition, distanceMap, randomness)
+
+def monsterBehavior(grid, monsterPosition, distanceMap, role="hunter"):
+    if role == "hunter":
+        return monsterMoveSmart(grid, monsterPosition, distanceMap, vision=20, randomness=0.05)
+    elif role == "stalker":
+        if distanceMap[monsterPosition[0]][monsterPosition[1]] < 8:
+            return monsterMoveSmart(grid, monsterPosition, distanceMap, vision=18, randomness=0.2)
+        else:
+            return monsterMoveSmart(grid, monsterPosition, distanceMap, vision=18, randomness=0.3)
+    elif role == "wanderer":
+        return monsterMoveSmart(grid, monsterPosition, distanceMap, vision=6, randomness=0.8)
+
+def monsterSpawn(grid):
+    width, height = len(grid), len(grid[0])
+    playerPos = (0, 0)
+    floorCells = [
+        (x, y)
+        for x in range(height)
+        for y in range(width)
+        if grid[x][y] == Floor and manhattan((x, y), playerPos) >= 10
+    ]
+    if len(floorCells) < 7:
+        floorCells = [
+            (x, y)
+            for x in range(height)
+            for y in range(width)
+            if grid[x][y] == Floor and manhattan((x, y), playerPos) >= 5
+        ]
+    randomSpawn = random.sample(floorCells, min(7, len(floorCells)))
+    for x, y in randomSpawn:
+        grid[x][y] = Monster
+    return randomSpawn
+
+initialMap = randomMap(50, 50)
 mapInitialization = copyMap(initialMap)
 path = None
 iterations = 30
@@ -437,10 +486,11 @@ currentFitness = fitness(mapInitialization)
 evolutionStage = [copyMap(mapInitialization)]
 currentMap = mapInitialization
 
+print("Generating Map...")
 for i in range(iterations):
     path = solve(mapInitialization)
     if path:
-        print(f"the map is already solvable at iteration {i}")
+        print(f"Map solvable at iteration {i}")
         break
     candidates = [changeMap(mapInitialization) for _ in range(3)]
     candidateFitness = [fitness(cand) for cand in candidates]
@@ -451,13 +501,10 @@ for i in range(iterations):
         mapInitialization = bestCandidates
         currentFitness = bestFitness
         print(f"Improved fitness to {currentFitness} at iteration {i + 1}")
-    else:
-        print(f"No improvement at iteration {i + 1}")
     evolutionStage.append(copyMap(mapInitialization))
-else:
-    print(f"Failed to make the map solvable in {i} iteration")
 
-mapChanges(evolutionStage, size=8, delay=1000)
+mapChanges(evolutionStage, size=8, delay=100) 
+
 pygame.init()
 size = 8
 height, width = len(mapInitialization), len(mapInitialization[0])
@@ -466,12 +513,11 @@ pygame.display.set_caption("Dungeon Map Game")
 clock = pygame.time.Clock()
 
 button_width = 200
-button_height = 50
+button_height = 40 
 button_color = (100, 100, 100)
 button_hover_color = (150, 150, 150)
 button_text_color = (255, 255, 255)
 font = pygame.font.SysFont(None, 36)
-
 
 def draw_button(screen, text, x, y, width, height, color, hover_color, mouse_pos):
     rect = pygame.Rect(x, y, width, height)
@@ -479,37 +525,29 @@ def draw_button(screen, text, x, y, width, height, color, hover_color, mouse_pos
         pygame.draw.rect(screen, hover_color, rect)
     else:
         pygame.draw.rect(screen, color, rect)
-    pygame.draw.rect(screen, (255, 255, 255), rect, 2)  # border
+    pygame.draw.rect(screen, (255, 255, 255), rect, 2)
     text_surf = font.render(text, True, button_text_color)
     text_rect = text_surf.get_rect(center=(x + width // 2, y + height // 2))
     screen.blit(text_surf, text_rect)
     return rect
 
-
 global hint_path, show_hint
 
-
 def reset_game():
-    global \
-        playerPos, \
-        monsterInitialPosition, \
-        monsterRoles, \
-        monsterCooldowns, \
-        caught, \
-        won, \
-        hint_path, \
-        show_hint
+    global playerPos, monsterInitialPosition, monsterRoles, monsterCooldowns, caught, won, hint_path, show_hint
     playerPos = (0, 0)
+    for r in range(len(mapInitialization)):
+        for c in range(len(mapInitialization[0])):
+            if mapInitialization[r][c] == Monster:
+                mapInitialization[r][c] = Floor
+                
     monsterInitialPosition = monsterSpawn(mapInitialization)
-    monsterRoles = [
-        random.choice(["hunter", "stalker", "wanderer"]) for _ in monsterInitialPosition
-    ]
+    monsterRoles = [random.choice(["hunter", "stalker", "wanderer"]) for _ in monsterInitialPosition]
     monsterCooldowns = [0] * len(monsterInitialPosition)
     caught = False
     won = False
     hint_path = None
     show_hint = False
-
 
 def hint():
     global hint_path, show_hint
@@ -519,23 +557,23 @@ def hint():
     else:
         show_hint = False
 
-
 reset_game()
 running = True
 main_menu = True
 game_started = False
 info_screen = False
 keys_pressed = set()
-mouse_pos = (0, 0)
 
 while running:
     mouse_pos = pygame.mouse.get_pos()
+    
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
                 if main_menu:
+<<<<<<< HEAD
                     start_rect = draw_button(
                         screen,
                         "Start Game",
@@ -558,100 +596,51 @@ while running:
                         button_hover_color,
                         mouse_pos,
                     )
+=======
+                    center_x = (width * size - button_width) // 2
+                    base_y = (height * size) // 2
+                    
+                    start_rect = draw_button(screen, "Start Game", center_x, base_y - 60, button_width, button_height, button_color, button_hover_color, mouse_pos)
+                    race_rect = draw_button(screen, "HC vs SA", center_x, base_y + 20, button_width, button_height, button_color, button_hover_color, mouse_pos)
+                    quit_rect = draw_button(screen, "Quit", center_x, base_y + 100, button_width, button_height, button_color, button_hover_color, mouse_pos)
+                    
+>>>>>>> f673ad6 (final pls)
                     if start_rect.collidepoint(mouse_pos):
                         main_menu = False
                         info_screen = True
-                        info_from_menu = True
                     elif quit_rect.collidepoint(mouse_pos):
                         running = False
+                        
                 elif not game_started and not info_screen:
-                    button_rect = draw_button(
-                        screen,
-                        "Start Game",
-                        (width * size - button_width) // 2,
-                        (height * size - button_height) // 2,
-                        button_width,
-                        button_height,
-                        button_color,
-                        button_hover_color,
-                        mouse_pos,
-                    )
-                    if button_rect.collidepoint(mouse_pos):
+                    btn = draw_button(screen, "Start Game", (width * size - button_width) // 2, (height * size - button_height) // 2, button_width, button_height, button_color, button_hover_color, mouse_pos)
+                    if btn.collidepoint(mouse_pos):
                         info_screen = True
+                        
                 elif info_screen:
-                    continue_rect = draw_button(
-                        screen,
-                        "Continue",
-                        (width * size - button_width) // 2 - 120,
-                        height * size - 100,
-                        button_width,
-                        button_height,
-                        button_color,
-                        button_hover_color,
-                        mouse_pos,
-                    )
-                    close_rect = draw_button(
-                        screen,
-                        "Close",
-                        (width * size - button_width) // 2 + 120,
-                        height * size - 100,
-                        button_width,
-                        button_height,
-                        button_color,
-                        button_hover_color,
-                        mouse_pos,
-                    )
-                    if continue_rect.collidepoint(mouse_pos) or close_rect.collidepoint(
-                        mouse_pos
-                    ):
+                    cont = draw_button(screen, "Continue", (width * size - button_width) // 2 - 220, height * size - 100, button_width, button_height, button_color, button_hover_color, mouse_pos)
+                    close = draw_button(screen, "Close", (width * size - button_width) // 2 + 220, height * size - 100, button_width, button_height, button_color, button_hover_color, mouse_pos)
+                    if cont.collidepoint(mouse_pos) or close.collidepoint(mouse_pos):
                         info_screen = False
                         game_started = True
+                        
                 elif caught:
-                    button_rect = draw_button(
-                        screen,
-                        "Retry",
-                        (width * size - button_width) // 2,
-                        (height * size - button_height) // 2,
-                        button_width,
-                        button_height,
-                        button_color,
-                        button_hover_color,
-                        mouse_pos,
-                    )
-                    hint_rect = draw_button(
-                        screen,
-                        "Hint",
-                        (width * size - button_width) // 2,
-                        (height * size - button_height) // 2 + 100,
-                        button_width,
-                        button_height,
-                        button_color,
-                        button_hover_color,
-                        pygame.mouse.get_pos(),
-                    )
-                    if button_rect.collidepoint(mouse_pos):
+                    retry = draw_button(screen, "Retry", (width * size - button_width) // 2, (height * size - button_height) // 2, button_width, button_height, button_color, button_hover_color, mouse_pos)
+                    hint_btn = draw_button(screen, "Hint", (width * size - button_width) // 2, (height * size - button_height) // 2 + 100, button_width, button_height, button_color, button_hover_color, mouse_pos)
+                    if retry.collidepoint(mouse_pos):
                         reset_game()
                         game_started = True
-                    if hint_rect.collidepoint(mouse_pos):
+                    if hint_btn.collidepoint(mouse_pos):
                         hint()
-                        show_hint = True
-                        game_started = True
-
-                elif won:
-                    button_rect = draw_button(
-                        screen,
-                        "Play Again",
-                        (width * size - button_width) // 2,
-                        (height * size - button_height) // 2,
-                        button_width,
-                        button_height,
-                        button_color,
-                        button_hover_color,
-                        mouse_pos,
-                    )
-                    if button_rect.collidepoint(mouse_pos):
                         reset_game()
                         game_started = True
+                        show_hint = True
+                        
+                elif won:
+                    again = draw_button(screen, "Play Again", (width * size - button_width) // 2, (height * size - button_height) // 2, button_width, button_height, button_color, button_hover_color, mouse_pos)
+                    if again.collidepoint(mouse_pos):
+                        reset_game()
+                        game_started = True
+                        
         elif event.type == pygame.KEYDOWN:
             keys_pressed.add(event.key)
             if event.key == pygame.K_RETURN:
@@ -674,31 +663,20 @@ while running:
 
     if game_started and not caught and not won:
         x, y = 0, 0
-        if pygame.K_w in keys_pressed:
-            x = -1
-        elif pygame.K_s in keys_pressed:
-            x = 1
-        if pygame.K_a in keys_pressed:
-            y = -1
-        elif pygame.K_d in keys_pressed:
-            y = 1
+        if pygame.K_w in keys_pressed: x = -1
+        elif pygame.K_s in keys_pressed: x = 1
+        if pygame.K_a in keys_pressed: y = -1
+        elif pygame.K_d in keys_pressed: y = 1
+        
         if x != 0 or y != 0:
             newX, newY = playerPos[0] + x, playerPos[1] + y
-            can_move = (
-                0 <= newX < height
-                and 0 <= newY < width
-                and mapInitialization[newX][newY] != Wall
-            )
+            can_move = (0 <= newX < height and 0 <= newY < width and mapInitialization[newX][newY] != Wall)
             if x != 0 and y != 0:
-                can_move = can_move and (
-                    mapInitialization[playerPos[0] + x][playerPos[1]] != Wall
-                    and mapInitialization[playerPos[0]][playerPos[1] + y] != Wall
-                )
+                can_move = can_move and (mapInitialization[playerPos[0] + x][playerPos[1]] != Wall and mapInitialization[playerPos[0]][playerPos[1] + y] != Wall)
             if can_move:
                 playerPos = (newX, newY)
 
         distanceMap = distancetoPlayer(mapInitialization, playerPos)
-
         monsterPositionUpdate = []
         for i, mPosition in enumerate(monsterInitialPosition):
             if monsterCooldowns[i] > 0:
@@ -706,15 +684,10 @@ while running:
                 monsterPositionUpdate.append(mPosition)
                 continue
             role = monsterRoles[i]
-            newPosition = monsterBehavior(
-                mapInitialization, mPosition, distanceMap, role
-            )
-            if (
-                newPosition != mPosition
-                and mapInitialization[newPosition[0]][newPosition[1]] != Wall
-            ):
+            newPosition = monsterBehavior(mapInitialization, mPosition, distanceMap, role)
+            if newPosition != mPosition and mapInitialization[newPosition[0]][newPosition[1]] != Wall:
                 monsterPositionUpdate.append(newPosition)
-                monsterCooldowns[i] = random.randint(2, 4)  # Cooldown after moving
+                monsterCooldowns[i] = random.randint(2, 4)
             else:
                 monsterPositionUpdate.append(mPosition)
         monsterInitialPosition = monsterPositionUpdate
@@ -724,54 +697,43 @@ while running:
         if any(m == playerPos for m in monsterInitialPosition):
             caught = True
 
-    color = {
-        Wall: (30, 30, 30),
-        Floor: (220, 220, 220),
-        Start: (0, 255, 0),
-        Goal: (255, 0, 0),
-    }
+    color = {Wall: (30, 30, 30), Floor: (220, 220, 220), Start: (0, 255, 0), Goal: (255, 0, 0)}
     screen.fill((0, 0, 0))
+    
     for x in range(height):
         for y in range(width):
             rect = pygame.Rect(y * size, x * size, size, size)
-            pygame.draw.rect(
-                screen, color.get(mapInitialization[x][y], (255, 255, 255)), rect
-            )
+            pygame.draw.rect(screen, color.get(mapInitialization[x][y], (255, 255, 255)), rect)
             pygame.draw.rect(screen, (0, 0, 0), rect, 1)
-        if show_hint and hint_path:
-            for hx, hy in hint_path:
-                rect = pygame.Rect(hy * size, hx * size, size, size)
-                pygame.draw.rect(screen, (255, 255, 0), rect)  # yellow highlight
+    
+    if show_hint and hint_path:
+        for hx, hy in hint_path:
+            rect = pygame.Rect(hy * size, hx * size, size, size)
+            pygame.draw.rect(screen, (255, 255, 0), rect)
 
-    if game_started:
-        pygame.draw.circle(
-            screen,
-            (0, 0, 255),
-            (playerPos[1] * size + size // 2, playerPos[0] * size + size // 2),
-            size // 2,
-        )
-        monster_colors = {
-            "hunter": (255, 0, 0),
-            "stalker": (255, 165, 0),
-            "wanderer": (128, 0, 128),
-        }
+    if game_started or caught or won:
+        pygame.draw.circle(screen, (0, 0, 255), (playerPos[1] * size + size // 2, playerPos[0] * size + size // 2), size // 2)
+        monster_colors = {"hunter": (255, 0, 0), "stalker": (255, 165, 0), "wanderer": (128, 0, 128)}
         for i, m in enumerate(monsterInitialPosition):
             role = monsterRoles[i]
-            pygame.draw.circle(
-                screen,
-                monster_colors.get(role, (255, 0, 0)),
-                (m[1] * size + size // 2, m[0] * size + size // 2),
-                size // 2,
-            )
-    font = pygame.font.SysFont(None, 36)
+            pygame.draw.circle(screen, monster_colors.get(role, (255, 0, 0)), (m[1] * size + size // 2, m[0] * size + size // 2), size // 2)
+
     if main_menu:
         title_font = pygame.font.SysFont(None, 72)
         title_text = title_font.render("Dungeon Map Game", True, (255, 255, 255))
-
         title_x = (width * size - title_text.get_width()) // 2
-        title_y = 100
-        padding = 20
+        pygame.draw.rect(screen, (50, 50, 50), (title_x - 10, 90, title_text.get_width() + 20, title_text.get_height() + 20), border_radius=10)
+        screen.blit(title_text, (title_x, 100))
+        
+        center_x = (width * size - button_width) // 2
+        base_y = (height * size) // 2
+        
+        draw_button(screen, "Start Game", center_x, base_y - 60, button_width, button_height, button_color, button_hover_color, mouse_pos)
+        draw_button(screen, "HC vs SA", center_x, base_y + 20, button_width, button_height, button_color, button_hover_color, mouse_pos)
+        draw_button(screen, "Quit", center_x, base_y + 100, button_width, button_height, button_color, button_hover_color, mouse_pos)
 
+
+<<<<<<< HEAD
         bg_rect = pygame.Rect(
             title_x - padding // 2,
             title_y - padding // 2,
@@ -815,24 +777,15 @@ while running:
             button_hover_color,
             mouse_pos,
         )
+=======
+>>>>>>> f673ad6 (final pls)
     elif info_screen:
         pygame.draw.rect(screen, (0, 0, 0), (0, 0, width * size, height * size))
-        info_lines = [
-            "Dungeon Map Game",
-            "",
-            "Controls:",
-            "WASD - Move",
-            "",
-            "Monster Types:",
-            "Red (Hunter): Aggressive, chases player",
-            "Orange (Stalker): Waits, then chases",
-            "Purple (Wanderer): Random movement",
-            "",
-            "Goal: Reach the red goal without getting caught!",
-        ]
+        info_lines = ["Dungeon Map Game", "", "Controls: WASD", "", "Monsters:", "Red: Hunter", "Orange: Stalker", "Purple: Wanderer", "", "Goal: Reach Red Square"]
         for i, line in enumerate(info_lines):
             text = font.render(line, True, (255, 255, 255))
             screen.blit(text, (50, 50 + i * 40))
+<<<<<<< HEAD
         draw_button(
             screen,
             "Continue",
@@ -855,45 +808,22 @@ while running:
             button_hover_color,
             mouse_pos,
         )
+=======
+        draw_button(screen, "Continue", (width * size - button_width) // 2 - 120, height * size - 100, button_width, button_height, button_color, button_hover_color, mouse_pos)
+        draw_button(screen, "Close", (width * size - button_width) // 2 + 120, height * size - 100, button_width, button_height, button_color, button_hover_color, mouse_pos)
+
+>>>>>>> f673ad6 (final pls)
     elif caught:
-        draw_button(
-            screen,
-            "Retry",
-            (width * size - button_width) // 2,
-            (height * size - button_height) // 2,
-            button_width,
-            button_height,
-            button_color,
-            button_hover_color,
-            mouse_pos,
-        )
-        hint_rect = draw_button(
-            screen,
-            "Hint",
-            (width * size - button_width) // 2,
-            (height * size - button_height) // 2 + 100,
-            button_width,
-            button_height,
-            button_color,
-            button_hover_color,
-            mouse_pos,
-        )
+        draw_button(screen, "Retry", (width * size - button_width) // 2, (height * size - button_height) // 2, button_width, button_height, button_color, button_hover_color, mouse_pos)
+        draw_button(screen, "Hint", (width * size - button_width) // 2, (height * size - button_height) // 2 + 100, button_width, button_height, button_color, button_hover_color, mouse_pos)
+        
     elif won:
-        draw_button(
-            screen,
-            "Play Again",
-            (width * size - button_width) // 2,
-            (height * size - button_height) // 2,
-            button_width,
-            button_height,
-            button_color,
-            button_hover_color,
-            mouse_pos,
-        )
-    else:
-        text = font.render("Run", True, (255, 255, 255))
-        screen.blit(text, (10, 10))
+        draw_button(screen, "Play Again", (width * size - button_width) // 2, (height * size - button_height) // 2, button_width, button_height, button_color, button_hover_color, mouse_pos)
+        
+    elif not game_started and not main_menu:
+        draw_button(screen, "Start Game", (width * size - button_width) // 2, (height * size - button_height) // 2, button_width, button_height, button_color, button_hover_color, mouse_pos)
 
     pygame.display.flip()
-    clock.tick(10)
+    clock.tick(15)
+
 pygame.quit()
