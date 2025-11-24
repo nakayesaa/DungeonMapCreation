@@ -506,7 +506,7 @@ for i in range(iterations):
 mapChanges(evolutionStage, size=8, delay=100) 
 
 pygame.init()
-size = 8
+size = 15
 height, width = len(mapInitialization), len(mapInitialization[0])
 screen = pygame.display.set_mode((width * size, height * size))
 pygame.display.set_caption("Dungeon Map Game")
@@ -573,30 +573,6 @@ while running:
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
                 if main_menu:
-<<<<<<< HEAD
-                    start_rect = draw_button(
-                        screen,
-                        "Start Game",
-                        (width * size - button_width) // 2,
-                        (height * size - button_height) // 2 - 150,
-                        button_width,
-                        button_height,
-                        button_color,
-                        button_hover_color,
-                        mouse_pos,
-                    )
-                    quit_rect = draw_button(
-                        screen,
-                        "Quit",
-                        (width * size - button_width) // 2,
-                        (height * size - button_height) // 2 + 50,
-                        button_width,
-                        button_height,
-                        button_color,
-                        button_hover_color,
-                        mouse_pos,
-                    )
-=======
                     center_x = (width * size - button_width) // 2
                     base_y = (height * size) // 2
                     
@@ -604,10 +580,11 @@ while running:
                     race_rect = draw_button(screen, "HC vs SA", center_x, base_y + 20, button_width, button_height, button_color, button_hover_color, mouse_pos)
                     quit_rect = draw_button(screen, "Quit", center_x, base_y + 100, button_width, button_height, button_color, button_hover_color, mouse_pos)
                     
->>>>>>> f673ad6 (final pls)
                     if start_rect.collidepoint(mouse_pos):
                         main_menu = False
                         info_screen = True
+                    elif race_rect.collidepoint(mouse_pos):
+                        compare_HC_vs_SA(mapInitialization)
                     elif quit_rect.collidepoint(mouse_pos):
                         running = False
                         
@@ -617,8 +594,8 @@ while running:
                         info_screen = True
                         
                 elif info_screen:
-                    cont = draw_button(screen, "Continue", (width * size - button_width) // 2 - 220, height * size - 100, button_width, button_height, button_color, button_hover_color, mouse_pos)
-                    close = draw_button(screen, "Close", (width * size - button_width) // 2 + 220, height * size - 100, button_width, button_height, button_color, button_hover_color, mouse_pos)
+                    cont = draw_button(screen, "Continue", (width * size - button_width) // 2 - 120, height * size - 100, button_width, button_height, button_color, button_hover_color, mouse_pos)
+                    close = draw_button(screen, "Close", (width * size - button_width) // 2 + 120, height * size - 100, button_width, button_height, button_color, button_hover_color, mouse_pos)
                     if cont.collidepoint(mouse_pos) or close.collidepoint(mouse_pos):
                         info_screen = False
                         game_started = True
@@ -643,18 +620,8 @@ while running:
                         
         elif event.type == pygame.KEYDOWN:
             keys_pressed.add(event.key)
-            if event.key == pygame.K_RETURN:
-                if info_screen:
-                    info_screen = False
-                    game_started = True
-                elif main_menu:
-                    main_menu = False
-                    info_screen = True
-                    info_from_menu = True
-
-            elif not game_started and event.key == pygame.K_SPACE:
+            if not game_started and event.key == pygame.K_SPACE:
                 game_started = True
-
             elif caught and event.key == pygame.K_r:
                 reset_game()
                 game_started = True
@@ -732,87 +699,15 @@ while running:
         draw_button(screen, "HC vs SA", center_x, base_y + 20, button_width, button_height, button_color, button_hover_color, mouse_pos)
         draw_button(screen, "Quit", center_x, base_y + 100, button_width, button_height, button_color, button_hover_color, mouse_pos)
 
-
-<<<<<<< HEAD
-        bg_rect = pygame.Rect(
-            title_x - padding // 2,
-            title_y - padding // 2,
-            title_text.get_width() + padding,
-            title_text.get_height() + padding,
-        )
-        pygame.draw.rect(screen, (50, 50, 50), bg_rect, border_radius=10)
-        pygame.draw.rect(screen, (255, 255, 255), bg_rect, 2, border_radius=10)
-        screen.blit(title_text, (title_x, title_y))
-        draw_button(
-            screen,
-            "Start Game",
-            (width * size - button_width) // 2,
-            (height * size - button_height) // 2 - 150,
-            button_width,
-            button_height,
-            button_color,
-            button_hover_color,
-            mouse_pos,
-        )
-        draw_button(
-            screen,
-            "Quit",
-            (width * size - button_width) // 2,
-            (height * size - button_height) // 2 + 50,
-            button_width,
-            button_height,
-            button_color,
-            button_hover_color,
-            mouse_pos,
-        )
-    elif not game_started and not info_screen:
-        draw_button(
-            screen,
-            "Start Game",
-            (width * size - button_width) // 2,
-            (height * size - button_height) // 2,
-            button_width,
-            button_height,
-            button_color,
-            button_hover_color,
-            mouse_pos,
-        )
-=======
->>>>>>> f673ad6 (final pls)
     elif info_screen:
         pygame.draw.rect(screen, (0, 0, 0), (0, 0, width * size, height * size))
         info_lines = ["Dungeon Map Game", "", "Controls: WASD", "", "Monsters:", "Red: Hunter", "Orange: Stalker", "Purple: Wanderer", "", "Goal: Reach Red Square"]
         for i, line in enumerate(info_lines):
             text = font.render(line, True, (255, 255, 255))
             screen.blit(text, (50, 50 + i * 40))
-<<<<<<< HEAD
-        draw_button(
-            screen,
-            "Continue",
-            (width * size - button_width) // 2 - 220,
-            height * size - 100,
-            button_width,
-            button_height,
-            button_color,
-            button_hover_color,
-            mouse_pos,
-        )
-        draw_button(
-            screen,
-            "Close",
-            (width * size - button_width) // 2 + 220,
-            height * size - 100,
-            button_width,
-            button_height,
-            button_color,
-            button_hover_color,
-            mouse_pos,
-        )
-=======
         draw_button(screen, "Continue", (width * size - button_width) // 2 - 120, height * size - 100, button_width, button_height, button_color, button_hover_color, mouse_pos)
         draw_button(screen, "Close", (width * size - button_width) // 2 + 120, height * size - 100, button_width, button_height, button_color, button_hover_color, mouse_pos)
 
->>>>>>> f673ad6 (final pls)
     elif caught:
         draw_button(screen, "Retry", (width * size - button_width) // 2, (height * size - button_height) // 2, button_width, button_height, button_color, button_hover_color, mouse_pos)
         draw_button(screen, "Hint", (width * size - button_width) // 2, (height * size - button_height) // 2 + 100, button_width, button_height, button_color, button_hover_color, mouse_pos)
